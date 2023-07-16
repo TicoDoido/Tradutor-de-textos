@@ -40,95 +40,58 @@ namespace WinFormsApp2
         {
             string textoParaTraduzir = richTextBox1.Text;
 
-            // Chama a função TraduzirTextoPorLinhas para traduzir o texto
-            string traducao = await TraduzirTextoPorLinhas(textoParaTraduzir, "en", "pt");
+            // Divide o texto em linhas separadas
+            string[] linhas = textoParaTraduzir.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
 
-            // Exibe o texto traduzido no RichTextBox richTextBox2
-            richTextBox2.Text = traducao;
-
-            if (openFileDialog.FileName != null)
-            {
-                outputFilePath = Path.GetFileNameWithoutExtension(openFileDialog.FileName) + "_traduzido.txt";
-
-                // Salva o texto traduzido em um arquivo com sufixo "_traduzido.txt"
-                File.WriteAllText(outputFilePath, traducao);
-            }
-        }
-
-        private async Task<string> TraduzirTextoPorLinhas(string texto, string idiomaOrigem, string idiomaDestino)
-        {
-            // Divide o texto em linhas
-            string[] linhas = texto.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-
-            // Lista para armazenar as traduções das linhas
-            List<string> traducoes = new List<string>();
-
-            // Itera sobre cada linha e realiza a tradução individualmente
             foreach (string linha in linhas)
             {
-                // Chama a função TraduzirComMyMemory para traduzir a linha atual
-                string traducaoLinha = await TraduzirComMyMemory(linha, idiomaOrigem, idiomaDestino);
+                // Faz a chamada à API do MyMemory para traduzir a linha
+                string linhaTraduzida = await TraduzirLinha(linha);
 
-                // Adiciona a tradução à lista de traduções
-                traducoes.Add(traducaoLinha);
+                // Exibe a linha traduzida no RichTextBox2
+                richTextBox2.AppendText(Environment.NewLine + linhaTraduzida);
             }
-
-            // Combina as traduções das linhas em uma única string usando Environment.NewLine como separador
-            return string.Join(Environment.NewLine, traducoes);
         }
 
-        private async Task<string> TraduzirComMyMemory(string texto, string idiomaOrigem, string idiomaDestino)
+        private async Task<string> TraduzirLinha(string linha)
         {
-            string url = "https://api.mymemory.translated.net/get";
-
-            // Define os parâmetros da chamada da API
-            var requestData = new Dictionary<string, string>
-            {
-                { "q", texto },
-                { "langpair", $"{idiomaOrigem}|{idiomaDestino}" }
-            };
-
             using (HttpClient client = new HttpClient())
             {
-                // Realiza uma solicitação POST para a API do MyMemory
-                var content = new FormUrlEncodedContent(requestData);
-                HttpResponseMessage response = await client.PostAsync(url, content);
+                string url = "https://api.mymemory.translated.net/get";
 
-                if (response.IsSuccessStatusCode)
+                // Crie um objeto que represente o conteúdo da requisição
+                var conteudo = new FormUrlEncodedContent(new[]
                 {
-                    // Lê a resposta da API
-                    string responseJson = await response.Content.ReadAsStringAsync();
+                    new KeyValuePair<string, string>("q", linha),
+                    new KeyValuePair<string, string>("langpair", "pt|en")
+                });
 
-                    // Analisa o JSON de resposta
-                    using (JsonDocument document = JsonDocument.Parse(responseJson))
-                    {
-                        JsonElement root = document.RootElement;
+                HttpResponseMessage response = await client.PostAsync(url, conteudo);
+                response.EnsureSuccessStatusCode();
+                string responseBody = await response.Content.ReadAsStringAsync();
 
-                        // Verifica se a chamada da API foi bem-sucedida
-                        if (root.TryGetProperty("responseStatus", out JsonElement responseStatus) && responseStatus.ToString() == "200")
-                        {
-                            // Obtém a tradução do texto do JSON de resposta
-                            if (root.TryGetProperty("responseData", out JsonElement responseData) && responseData.TryGetProperty("translatedText", out JsonElement translatedText))
-                            {
-                                string traducao = translatedText.GetString();
-                                return traducao;
-                            }
-                        }
-                        else
-                        {
-                            // Se a chamada da API não foi bem-sucedida, verifica se há detalhes de erro
-                            if (root.TryGetProperty("responseDetails", out JsonElement responseDetails))
-                            {
-                                string erro = responseDetails.GetString();
-                                return $"Erro na tradução: {erro}";
-                            }
-                        }
-                    }
+                // Deserializar o JSON usando classes personalizadas
+                var result = JsonSerializer.Deserialize<ApiResponse>(responseBody);
+                if (result?.responseData?.translatedText != null)
+                {
+                    return result.responseData.translatedText;
                 }
-
-                // Trata o erro caso a chamada não seja bem-sucedida
-                return $"Erro na tradução: {response.ReasonPhrase}";
+                else
+                {
+                    throw new Exception("Não foi possível obter a tradução.");
+                }
             }
+        }
+
+        // Classe auxiliar para desserializar a resposta JSON da API
+        private class ApiResponse
+        {
+            public ResponseData responseData { get; set; }
+        }
+
+        private class ResponseData
+        {
+            public string translatedText { get; set; }
         }
 
         private void buttonEdit_Click(object sender, EventArgs e)
