@@ -38,53 +38,66 @@ namespace WinFormsApp2
 
         private async void buttonTranslate_Click(object sender, EventArgs e)
         {
-            string textoParaTraduzir = richTextBox1.Text;
+            string originalText = richTextBox1.Text;
 
-            // Divide o texto em linhas separadas
-            string[] linhas = textoParaTraduzir.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-
-            foreach (string linha in linhas)
+            if (string.IsNullOrEmpty(originalText))
             {
-                // Faz a chamada à API do MyMemory para traduzir a linha
-                string linhaTraduzida = await TraduzirLinha(linha);
+                MessageBox.Show("Nenhum texto para traduzir!");
+                return;
+            }
 
-                // Exibe a linha traduzida no RichTextBox2
-                richTextBox2.AppendText(Environment.NewLine + linhaTraduzida);
+            string[] lines = originalText.Split('\n'); // Divide o texto em linhas
+
+            // Limpa o conteúdo de richTextBox2 antes da tradução
+            richTextBox2.Text = string.Empty;
+
+            // Configuração da API do My Memory
+            string apiUrl = "https://api.mymemory.translated.net/get";
+            HttpClient httpClient = new HttpClient();
+
+            foreach (string line in lines)
+            {
+                string encodedLine = Uri.EscapeDataString(line); // Codifica a linha para URL
+
+                // Monta a URL da API com o texto a ser traduzido
+                string requestUrl = $"{apiUrl}?q={encodedLine}&langpair=en|pt";
+
+                try
+                {
+                    HttpResponseMessage response = await httpClient.GetAsync(requestUrl);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string jsonResponse = await response.Content.ReadAsStringAsync();
+                        TranslationResponse translationResponse = JsonSerializer.Deserialize<TranslationResponse>(jsonResponse);
+
+                        // Obtém o texto traduzido da resposta da API
+                        string translatedText = translationResponse?.responseData?.translatedText;
+
+                        // Adiciona o texto traduzido ao richTextBox2
+                        if (!string.IsNullOrEmpty(translatedText))
+                        {
+                            richTextBox2.AppendText(translatedText + Environment.NewLine);
+                        }
+                        else
+                        {
+                            richTextBox2.AppendText("[Erro na tradução]" + Environment.NewLine);
+                        }
+                    }
+                    else
+                    {
+                        richTextBox2.AppendText("[Erro na tradução]" + Environment.NewLine);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    richTextBox2.AppendText("[Erro na tradução]" + Environment.NewLine);
+                }
             }
         }
 
-        private async Task<string> TraduzirLinha(string linha)
-        {
-            using (HttpClient client = new HttpClient())
-            {
-                string url = "https://api.mymemory.translated.net/get";
-
-                // Crie um objeto que represente o conteúdo da requisição
-                var conteudo = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("q", linha),
-                    new KeyValuePair<string, string>("langpair", "pt|en")
-                });
-
-                HttpResponseMessage response = await client.PostAsync(url, conteudo);
-                response.EnsureSuccessStatusCode();
-                string responseBody = await response.Content.ReadAsStringAsync();
-
-                // Deserializar o JSON usando classes personalizadas
-                var result = JsonSerializer.Deserialize<ApiResponse>(responseBody);
-                if (result?.responseData?.translatedText != null)
-                {
-                    return result.responseData.translatedText;
-                }
-                else
-                {
-                    throw new Exception("Não foi possível obter a tradução.");
-                }
-            }
-        }
-
-        // Classe auxiliar para desserializar a resposta JSON da API
-        private class ApiResponse
+        // Definição da classe para desserializar a resposta da API do My Memory
+        private class TranslationResponse
         {
             public ResponseData responseData { get; set; }
         }
